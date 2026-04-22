@@ -187,34 +187,30 @@ code, pre, .mono { font-family: 'JetBrains Mono', monospace !important; }
 }
 
 /* ── Analyze button ── */
-  div[data-testid="stButton"] > button {
-  background: linear-gradient(135deg, #1a56db 0%, #7c3aed 100%) !important;
-  color: #fff !important;
-  border: none !important;
-  border-radius: var(--radius-md) !important;
-  font-weight: 700 !important;
-  font-size: 1rem !important;
-  letter-spacing: .05em !important;
-  padding: .7rem 2rem !important;
-  transition: all .25s cubic-bezier(.4,0,.2,1) !important;
-  box-shadow: 0 4px 15px rgba(124,58,237,.35), 0 0 30px rgba(124,58,237,.15) !important;
-  position: relative !important;
-  overflow: hidden !important;
+ /* ✅ SAFE BUTTON (FINAL FIXED VERSION) */
+div[data-testid="stButton"] > button {
+  background: linear-gradient(135deg, #1a56db, #7c3aed);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: 0.05em;
+  padding: 0.6rem 1.5rem;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 15px rgba(124,58,237,0.35);
 }
-.stButton > button::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 60%);
-  opacity: 0;
-  transition: opacity .25s ease;
+
+/* Hover */
+div[data-testid="stButton"] > button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(124,58,237,0.5);
 }
-.stButton > button:hover {
-  transform: translateY(-3px) scale(1.02) !important;
-  box-shadow: 0 8px 30px rgba(124,58,237,.55), 0 0 50px rgba(99,179,237,.2) !important;
+
+/* Click */
+div[data-testid="stButton"] > button:active {
+  transform: scale(0.98);
 }
-.stButton > button:hover::before { opacity: 1; }
-.stButton > button:active { transform: translateY(0) scale(.99) !important; }
 
 /* ── Download button ── */
 .stDownloadButton > button {
