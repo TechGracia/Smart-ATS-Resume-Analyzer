@@ -6,7 +6,7 @@ An AI-powered web application that analyzes resumes against job descriptions and
 
 ## 🚀 Live Demo
 
-👉 **[Open App](https://your-app-name.streamlit.app)**
+👉 **[Open App](https://smartaianalyzer.streamlit.app/)**
 
 ---
 
