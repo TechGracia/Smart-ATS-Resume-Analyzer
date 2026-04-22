@@ -187,7 +187,7 @@ code, pre, .mono { font-family: 'JetBrains Mono', monospace !important; }
 }
 
 /* ── Analyze button ── */
-.stButton > button {
+  div[data-testid="stButton"] > button {
   background: linear-gradient(135deg, #1a56db 0%, #7c3aed 100%) !important;
   color: #fff !important;
   border: none !important;
