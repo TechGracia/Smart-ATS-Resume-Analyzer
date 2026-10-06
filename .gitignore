@@ -1,0 +1,18 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment/secrets
+.env
+.streamlit/secrets.toml
+
+# Generated pipeline outputs
+output/*.csv
+
+# Resume PDFs used for local testing
+input_resumes/*.pdf

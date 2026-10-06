@@ -43,6 +43,13 @@ from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 )
 
+# ============================================================
+# DATA ENGINEERING PIPELINE
+# ============================================================
+from data_pipeline.cleaning import clean_text as pipeline_clean_text
+from data_pipeline.extraction import transform_resume
+from data_pipeline.validation import validate_resume
+
 warnings.filterwarnings("ignore")
 
 
@@ -67,51 +74,64 @@ PREMIUM_CSS = """
 
 /* ── Design tokens ── */
 :root {
-  --bg-base:      #050810;
-  --bg-surface:   #0c1120;
-  --bg-card:      rgba(255,255,255,0.04);
-  --border:       rgba(255,255,255,0.08);
-  --border-glow:  rgba(99,179,237,0.35);
-  --accent-cyan:  #63b3ed;
+  --bg-base:      #050816;
+  --bg-surface:   #070B18;
+  --bg-card:      #0D1326;
+  --border:       rgba(91,108,255,0.12);
+  --border-glow:  rgba(91,108,255,0.35);
+  --accent-cyan:  #5B6CFF;
   --accent-green: #68d391;
-  --accent-purple:#b794f4;
+  --accent-purple:#8B5CF6;
   --accent-amber: #f6ad55;
   --danger:       #fc8181;
-  --text-primary: #f0f4ff;
-  --text-muted:   #718096;
+  --text-primary: #F8FAFC;
+  --text-muted:   #A1A8C3;
   --text-dim:     #4a5568;
   --radius-lg:    16px;
   --radius-md:    10px;
   --radius-sm:    6px;
   --shadow-glass: 0 8px 32px rgba(0,0,0,0.4);
-  --shadow-glow:  0 0 20px rgba(99,179,237,0.15);
+  --shadow-glow:  0 0 20px rgba(91,108,255,0.15);
 }
 
 /* ── Base reset — transparent so particles shine through ── */
 html, body {
-  background: #050810 !important;
+  background: #0a1020 !important;
   overflow-x: hidden;
 }
 [data-testid="stAppViewContainer"],
 [data-testid="stApp"] {
-  background: transparent !important;
+  background: #0a1020 !important;
   position: relative;
   z-index: 1;
 }
-/* Deep radial gradient overlay so particles don't clash with content */
+/* Calm professional dashboard background — no animated wallpaper */
 [data-testid="stAppViewContainer"]::before {
   content: '';
   position: fixed;
   inset: 0;
   background:
-    radial-gradient(ellipse 80% 50% at 20% 20%, rgba(99,179,237,0.04) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 60% at 80% 80%, rgba(167,139,250,0.04) 0%, transparent 60%),
-    radial-gradient(ellipse 100% 80% at 50% 50%, rgba(5,8,16,0.65) 0%, rgba(5,8,16,0.85) 100%);
+    radial-gradient(circle at 12% 8%, rgba(99,102,241,0.10), transparent 28%),
+    radial-gradient(circle at 88% 18%, rgba(139,92,246,0.07), transparent 26%),
+    linear-gradient(180deg, #0a1020 0%, #0d1424 52%, #0a1020 100%);
+  z-index: -2;
+  pointer-events: none;
+}
+[data-testid="stAppViewContainer"]::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(148,163,184,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148,163,184,0.025) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(to bottom, rgba(0,0,0,.7), transparent 88%);
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,.7), transparent 88%);
   z-index: -1;
   pointer-events: none;
 }
 [data-testid="stHeader"]         { background: transparent !important; }
-[data-testid="stSidebar"]        { background: rgba(12,17,32,0.9) !important; backdrop-filter: blur(20px); }
+[data-testid="stSidebar"]        { background: rgba(7,11,24,0.9) !important; backdrop-filter: blur(20px); }
 [data-testid="stDecoration"]     { display: none !important; }
 section[data-testid="stMain"] > div { padding-top: 0 !important; }
 
@@ -121,8 +141,8 @@ section[data-testid="stMain"] > div { padding-top: 0 !important; }
   to   { opacity: 1; transform: translateY(0); }
 }
 @keyframes glowPulse {
-  0%, 100% { box-shadow: 0 0 20px rgba(99,179,237,0.15), 0 0 40px rgba(99,179,237,0.05); }
-  50%       { box-shadow: 0 0 30px rgba(99,179,237,0.25), 0 0 60px rgba(99,179,237,0.1); }
+  0%, 100% { box-shadow: 0 0 20px rgba(91,108,255,0.15), 0 0 40px rgba(91,108,255,0.05); }
+  50%       { box-shadow: 0 0 30px rgba(91,108,255,0.25), 0 0 60px rgba(91,108,255,0.1); }
 }
 @keyframes neonFlicker {
   0%, 100% { opacity: 1; }
@@ -131,73 +151,91 @@ section[data-testid="stMain"] > div { padding-top: 0 !important; }
   94%       { opacity: 1; }
 }
 
-/* Apply fade-in to main blocks */
+/* Stable dashboard rendering: avoid repeated animation on Streamlit reruns. */
 [data-testid="stVerticalBlock"] > div {
-  animation: fadeInUp 0.45s ease both;
+  animation: none !important;
 }
 
-/* ── Neon glow on interactive metric values ── */
+/* Metrics stay crisp and static. */
 [data-testid="stMetricValue"] {
-  text-shadow: 0 0 18px rgba(99,179,237,0.55) !important;
-  animation: glowPulse 3s ease-in-out infinite;
+  text-shadow: none !important;
+  animation: none !important;
 }
 
 /* ── Typography ── */
-*, h1, h2, h3, h4, p, span, div, label {
+body, button, input, textarea, select, h1, h2, h3, h4, h5, h6, p, label {
   font-family: 'Plus Jakarta Sans', sans-serif !important;
-  color: var(--text-primary) !important;
+}
+body, h1, h2, h3, h4, h5, h6, p, label {
+  color: var(--text-primary);
 }
 code, pre, .mono { font-family: 'JetBrains Mono', monospace !important; }
+
+/* Never let Streamlit's Material icon text inherit the app font.
+   On some Streamlit versions the expander icon is rendered as text
+   (e.g. keyboard_arrow_down), which otherwise appears as 'rro' before
+   every expander title. */
+[data-testid="stExpander"] span.material-icons,
+[data-testid="stExpander"] span.material-icons-round,
+[data-testid="stExpander"] span.material-symbols-rounded,
+[data-testid="stExpander"] span.material-symbols-outlined,
+[data-testid="stExpander"] span[class*="material-symbol"] {
+  display: none !important;
+}
 
 /* ── Scrollbar ── */
 ::-webkit-scrollbar            { width: 6px; }
 ::-webkit-scrollbar-track      { background: transparent; }
-::-webkit-scrollbar-thumb      { background: rgba(99,179,237,0.2); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover{ background: rgba(99,179,237,0.4); }
+::-webkit-scrollbar-thumb      { background: rgba(91,108,255,0.2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover{ background: rgba(91,108,255,0.4); }
 
 /* ── Tabs ── */
 [data-testid="stTabs"] [role="tablist"] {
-  background: rgba(12,17,32,0.7) !important;
+  background: rgba(13,19,38,0.7) !important;
   backdrop-filter: blur(12px) !important;
   border-radius: var(--radius-md) var(--radius-md) 0 0 !important;
   padding: 6px 6px 0 !important;
   gap: 4px;
-  border-bottom: 1px solid rgba(99,179,237,0.12) !important;
+  flex-wrap: wrap !important;
+  overflow-x: visible !important;
+  border-bottom: 1px solid rgba(91,108,255,0.12) !important;
 }
 [data-testid="stTabs"] button {
   font-weight: 600 !important;
-  font-size: .82rem !important;
+  font-size: .80rem !important;
+  white-space: nowrap !important;
   letter-spacing: .04em !important;
   color: var(--text-muted) !important;
   border-radius: var(--radius-sm) var(--radius-sm) 0 0 !important;
-  padding: .5rem .9rem !important;
-  transition: all .2s ease !important;
+  padding: .5rem .72rem !important;
+  transition: color .2s ease, background .2s ease !important;
   border: none !important;
 }
 [data-testid="stTabs"] button:hover {
   color: var(--text-primary) !important;
-  background: rgba(99,179,237,0.06) !important;
+  background: rgba(91,108,255,0.06) !important;
 }
 [data-testid="stTabs"] button[aria-selected="true"] {
-  color: var(--accent-cyan) !important;
-  background: rgba(99,179,237,0.1) !important;
-  border-bottom: 2px solid var(--accent-cyan) !important;
-  text-shadow: 0 0 16px rgba(99,179,237,0.5) !important;
-  box-shadow: 0 0 12px rgba(99,179,237,0.08) inset !important;
+  color: #5B6CFF !important;
+  background: rgba(91,108,255,0.1) !important;
+  border-bottom: 2px solid #5B6CFF !important;
+  text-shadow: 0 0 16px rgba(91,108,255,0.5) !important;
+  box-shadow: 0 0 12px rgba(91,108,255,0.08) inset !important;
 }
 
-/* ── Analyze button ── */
+/* ── Analyze button — centered glow, 250-320px ── */
 .stButton > button {
-  background: linear-gradient(135deg, #1a56db 0%, #7c3aed 100%) !important;
+  background: linear-gradient(135deg, #4F46E5, #8B5CF6) !important;
   color: #fff !important;
   border: none !important;
   border-radius: var(--radius-md) !important;
   font-weight: 700 !important;
   font-size: 1rem !important;
   letter-spacing: .05em !important;
-  padding: .7rem 2rem !important;
+  padding: .65rem 1.8rem !important;
+  min-width: 250px !important;
   transition: all .25s cubic-bezier(.4,0,.2,1) !important;
-  box-shadow: 0 4px 15px rgba(124,58,237,.35), 0 0 30px rgba(124,58,237,.15) !important;
+  box-shadow: 0 6px 18px rgba(79,70,229,.18) !important;
   position: relative !important;
   overflow: hidden !important;
 }
@@ -210,61 +248,118 @@ code, pre, .mono { font-family: 'JetBrains Mono', monospace !important; }
   transition: opacity .25s ease;
 }
 .stButton > button:hover {
-  transform: translateY(-3px) scale(1.02) !important;
-  box-shadow: 0 8px 30px rgba(124,58,237,.55), 0 0 50px rgba(99,179,237,.2) !important;
+  transform: translateY(-2px) scale(1.015) !important;
+  box-shadow: 0 8px 22px rgba(79,70,229,.25) !important;
 }
 .stButton > button:hover::before { opacity: 1; }
 .stButton > button:active { transform: translateY(0) scale(.99) !important; }
 
+/* ── Max-width dashboard container ── */
+section[data-testid="stMain"] > div > div[data-testid="stVerticalBlock"] {
+  max-width: 1300px !important;
+  margin: 0 auto !important;
+  padding-left: 1.5rem !important;
+  padding-right: 1.5rem !important;
+}
+
+/* ── Reduce global vertical breathing room ── */
+[data-testid="stVerticalBlock"] > div + div {
+  margin-top: 0 !important;
+}
+section[data-testid="stMain"] {
+  padding-top: .5rem !important;
+  padding-bottom: 0 !important;
+}
+
+/* ── Upload card label styling ── */
+[data-testid="stFileUploaderLabel"] {
+  font-weight: 600 !important;
+  font-size: .82rem !important;
+  color: var(--text-muted) !important;
+}
+
+/* ── Input glass card hover glow (applied to columns containing uploaders) ── */
+[data-testid="stFileUploader"] {
+  background: rgba(255,255,255,.02) !important;
+  border: 1.5px dashed rgba(91,108,255,.15) !important;
+  border-radius: var(--radius-lg) !important;
+  transition: all .25s ease !important;
+  backdrop-filter: blur(8px) !important;
+  padding: .5rem !important;
+}
+[data-testid="stFileUploader"]:hover {
+  border-color: rgba(91,108,255,0.40) !important;
+  box-shadow: 0 0 22px rgba(91,108,255,0.08), inset 0 0 18px rgba(91,108,255,0.02) !important;
+}
+
+/* ── Responsive: tablet / mobile ── */
+@media (max-width: 768px) {
+  section[data-testid="stMain"] > div > div[data-testid="stVerticalBlock"] {
+    padding-left: .75rem !important;
+    padding-right: .75rem !important;
+  }
+  [data-testid="stHorizontalBlock"] {
+    flex-direction: column !important;
+  }
+  [data-testid="stHorizontalBlock"] > div {
+    width: 100% !important;
+    min-width: 100% !important;
+  }
+}
+
 /* ── Download button ── */
 .stDownloadButton > button {
-  background: linear-gradient(135deg, #065f46 0%, #047857 100%) !important;
-  color: var(--accent-green) !important;
-  border: 1px solid rgba(104,211,145,.3) !important;
+  background: linear-gradient(135deg, #4F46E5, #8B5CF6) !important;
+  color: #fff !important;
+  border: none !important;
   border-radius: var(--radius-md) !important;
   font-weight: 700 !important;
   font-size: .95rem !important;
   padding: .65rem 1.5rem !important;
   transition: all .2s ease !important;
-  box-shadow: 0 4px 15px rgba(6,95,70,.3) !important;
+  box-shadow: 0 6px 18px rgba(79,70,229,.18) !important;
 }
 .stDownloadButton > button:hover {
   transform: translateY(-1px) !important;
-  box-shadow: 0 6px 20px rgba(6,95,70,.45) !important;
+  box-shadow: 0 8px 22px rgba(79,70,229,.25) !important;
 }
 
 /* ── File uploader ── */
 [data-testid="stFileUploader"] {
-  background: rgba(99,179,237,0.03) !important;
-  border: 1.5px dashed rgba(99,179,237,0.25) !important;
+  background: rgba(255,255,255,.02) !important;
+  border: 1.5px dashed rgba(91,108,255,.15) !important;
   border-radius: var(--radius-lg) !important;
   transition: all .25s ease !important;
   backdrop-filter: blur(8px) !important;
 }
 [data-testid="stFileUploader"]:hover {
-  border-color: rgba(99,179,237,0.6) !important;
-  box-shadow: 0 0 20px rgba(99,179,237,0.1), inset 0 0 20px rgba(99,179,237,0.03) !important;
+  border-color: rgba(91,108,255,0.40) !important;
+  box-shadow: 0 0 20px rgba(91,108,255,0.08), inset 0 0 20px rgba(91,108,255,0.02) !important;
 }
 
 /* ── Textarea ── */
 textarea {
-  background: rgba(12,17,32,0.7) !important;
-  border: 1.5px solid rgba(255,255,255,0.08) !important;
+  background: #0E1730 !important;
+  border: 1.5px solid rgba(91,108,255,0.2) !important;
   border-radius: var(--radius-md) !important;
   color: var(--text-primary) !important;
   font-size: .88rem !important;
   transition: all .2s ease !important;
-  backdrop-filter: blur(8px) !important;
+  backdrop-filter: blur(12px) !important;
+  padding: .75rem 1rem !important;
+}
+textarea:hover {
+  border-color: rgba(91,108,255,0.35) !important;
 }
 textarea:focus {
-  border-color: rgba(99,179,237,0.5) !important;
-  box-shadow: 0 0 0 3px rgba(99,179,237,.08), 0 0 20px rgba(99,179,237,.1) !important;
+  border-color: rgba(91,108,255,0.6) !important;
+  box-shadow: 0 0 0 3px rgba(91,108,255,.08), 0 0 22px rgba(91,108,255,.12) !important;
 }
 
 /* ── Native metric widget ── */
 [data-testid="stMetric"] {
-  background: rgba(12,17,32,0.6) !important;
-  border: 1px solid rgba(99,179,237,0.12) !important;
+  background: rgba(13,19,38,0.6) !important;
+  border: 1px solid rgba(91,108,255,0.12) !important;
   border-top: 1px solid rgba(255,255,255,0.08) !important;
   border-radius: var(--radius-lg) !important;
   padding: 1.1rem 1.3rem !important;
@@ -274,8 +369,8 @@ textarea:focus {
   box-shadow: 0 4px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05) !important;
 }
 [data-testid="stMetric"]:hover {
-  border-color: rgba(99,179,237,0.3) !important;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 20px rgba(99,179,237,0.08) !important;
+  border-color: rgba(91,108,255,0.3) !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 20px rgba(91,108,255,0.08) !important;
   transform: translateY(-1px) scale(1.01) !important;
 }
 [data-testid="stMetricValue"] {
@@ -288,70 +383,93 @@ textarea:focus {
 
 /* ── Expander ── */
 [data-testid="stExpander"] {
-  background: rgba(12,17,32,0.55) !important;
-  border: 1px solid rgba(255,255,255,0.07) !important;
-  border-radius: var(--radius-md) !important;
+  background: rgba(15,23,42,0.82) !important;
+  border: 1px solid rgba(148,163,184,0.14) !important;
+  border-radius: 12px !important;
   overflow: hidden;
-  backdrop-filter: blur(12px) !important;
-  transition: border-color .2s ease !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.18) !important;
 }
 [data-testid="stExpander"]:hover {
-  border-color: rgba(99,179,237,0.18) !important;
+  border-color: rgba(99,102,241,0.30) !important;
 }
 [data-testid="stExpander"] summary,
 [data-testid="stExpanderHeader"] {
-  background: transparent !important;
-  padding: .5rem .8rem !important;
+  background: rgba(15,23,42,0.72) !important;
+  padding: .72rem .9rem !important;
   cursor: pointer;
+  min-height: 2.7rem !important;
+  line-height: 1.35 !important;
 }
-[data-testid="stExpander"] summary > div > svg,
-[data-testid="stExpander"] details > summary span.material-icons,
-[data-testid="stExpander"] details > summary > div > span:first-child {
-  font-size: 0 !important;
-  line-height: 0 !important;
-  overflow: hidden !important;
+[data-testid="stExpander"] summary {
+  display: flex !important;
+  align-items: center !important;
+  gap: .55rem !important;
 }
-[data-testid="stExpander"] summary svg {
-  font-size: initial !important;
-  width: 18px !important;
-  height: 18px !important;
-  color: var(--text-muted) !important;
-  fill: var(--text-muted) !important;
+[data-testid="stExpander"] summary > div {
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
 }
 [data-testid="stExpander"] summary p,
 [data-testid="stExpander"] .streamlit-expanderHeader p {
-  font-weight: 600 !important;
-  font-size: .88rem !important;
+  font-size: .90rem !important;
+  line-height: 1.35 !important;
+  font-weight: 650 !important;
   color: var(--text-primary) !important;
   margin: 0 !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
 }
-[data-testid="stExpander"] summary span {
-    font-size: 0 !important;
-    line-height: 0 !important;
-}
+/* Streamlit versions that expose the arrow as SVG */
 [data-testid="stExpander"] summary svg {
-    font-size: initial !important;
-    width: 16px !important;
-    height: 16px !important;
-    display: inline-block !important;
+  width: 18px !important;
+  height: 18px !important;
+  flex: 0 0 18px !important;
+  color: #94a3b8 !important;
+  fill: #94a3b8 !important;
 }
-[data-testid="stExpander"] summary {
-    display: flex !important;
-    align-items: center !important;
-    gap: 6px !important;
+/* Fallback arrow for versions where the native icon is text */
+[data-testid="stExpander"] summary::before {
+  content: '›';
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  color: #94a3b8;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1;
+  transform: rotate(0deg);
+  transition: transform .18s ease;
+}
+[data-testid="stExpander"] summary[aria-expanded="true"]::before {
+  transform: rotate(90deg);
+}
+/* Custom HTML blocks: keep headings/content in normal document flow. */
+.ui-card, .ui-card > div, .ui-card p, .ui-card span {
+  box-sizing: border-box !important;
+}
+.ui-card > div {
+  position: static !important;
+}
+.ui-card p {
+  line-height: 1.5 !important;
 }
 
 /* ── Alert / info boxes ── */
 [data-testid="stAlert"] {
-  background: rgba(99,179,237,.06) !important;
-  border: 1px solid rgba(99,179,237,.18) !important;
+  background: rgba(91,108,255,.06) !important;
+  border: 1px solid rgba(91,108,255,.18) !important;
   border-radius: var(--radius-md) !important;
   backdrop-filter: blur(8px) !important;
 }
 
 /* ── Dataframe ── */
 [data-testid="stDataFrame"] {
-  border: 1px solid rgba(99,179,237,0.12) !important;
+  border: 1px solid rgba(91,108,255,0.12) !important;
   border-radius: var(--radius-md) !important;
   overflow: hidden;
   backdrop-filter: blur(8px) !important;
@@ -367,7 +485,7 @@ textarea:focus {
 hr {
   border: none !important;
   height: 1px !important;
-  background: linear-gradient(90deg,transparent,rgba(99,179,237,.2),transparent) !important;
+  background: linear-gradient(90deg,transparent,rgba(91,108,255,.2),transparent) !important;
   margin: 1.4rem 0 !important;
 }
 
@@ -382,46 +500,45 @@ hr {
 
 /* ─── MAP INSIGHTS STYLES ─── */
 .map-glass-card {
-  background: rgba(12,17,32,0.75);
+  background: rgba(13,19,38,0.75);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(99,179,237,0.14);
+  border: 1px solid rgba(91,108,255,0.14);
   border-top: 1px solid rgba(255,255,255,0.09);
   border-radius: 20px;
   padding: 1.6rem 1.8rem 1.4rem;
   margin-bottom: 1.2rem;
-  box-shadow: 0 12px 40px rgba(0,0,0,0.5),
-              0 0 60px rgba(99,179,237,0.06),
-              inset 0 1px 0 rgba(255,255,255,0.05);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.22),
+              inset 0 1px 0 rgba(255,255,255,0.04);
 }
 .map-title {
   font-size: 1.1rem !important;
   font-weight: 800 !important;
-  color: #63b3ed !important;
+  color: #5B6CFF !important;
   letter-spacing: .03em;
   margin: 0 0 .25rem !important;
-  text-shadow: 0 0 22px rgba(99,179,237,0.4);
+  text-shadow: none;
 }
 .map-subtitle {
   font-size: .82rem !important;
-  color: #718096 !important;
+  color: #A1A8C3 !important;
   margin: 0 0 1.2rem !important;
 }
 .loc-badge {
   display:inline-flex; align-items:center; gap:.4rem;
-  background: rgba(99,179,237,0.09);
-  border: 1px solid rgba(99,179,237,0.22);
+  background: rgba(91,108,255,0.09);
+  border: 1px solid rgba(91,108,255,0.22);
   border-radius: 999px;
   padding: 4px 14px;
   font-size: .79rem;
   font-weight: 600;
-  color: #63b3ed !important;
+  color: #5B6CFF !important;
   margin: 3px 3px;
   transition: all .2s ease;
 }
 .loc-freq-bar {
-  background: linear-gradient(90deg, rgba(99,179,237,0.18), rgba(183,148,244,0.18));
-  border: 1px solid rgba(99,179,237,0.12);
+  background: linear-gradient(90deg, rgba(91,108,255,0.18), rgba(139,92,246,0.18));
+  border: 1px solid rgba(91,108,255,0.12);
   border-radius: 10px;
   padding: .7rem 1rem;
   margin-bottom: .5rem;
@@ -431,8 +548,8 @@ hr {
 }
 /* ─── NEW CODE START ─── keyword highlight box ─── */
 .kw-highlight-box {
-  background: rgba(12,17,32,0.6);
-  border: 1px solid rgba(99,179,237,0.12);
+  background: rgba(13,19,38,0.6);
+  border: 1px solid rgba(91,108,255,0.12);
   border-radius: 14px;
   padding: 1.2rem 1.4rem;
   line-height: 2.1;
@@ -453,199 +570,94 @@ st.markdown(PREMIUM_CSS, unsafe_allow_html=True)
 # ══════════════════════════════════════════════════════════════════
 
 def advanced_particles_background():
+    """Compatibility hook retained from the original app.
+
+    The animated particles background is intentionally disabled in the
+    professional UI redesign so the dashboard content remains readable.
     """
-    Inject a full-screen animated particles.js background that covers the
-    entire viewport.  Uses an invisible iframe (height=0) whose JS reaches
-    into the parent document to mount the canvas — this bypasses the iframe
-    boundary so the effect fills the whole page, not just a widget box.
-    """
-    _particles_html = """
-<!DOCTYPE html>
-<html>
-<head><style>body{margin:0;padding:0;background:transparent;}</style></head>
-<body>
-<script>
-(function () {
-  "use strict";
-  var parent = window.parent || window;
-  var doc    = parent.document;
-
-  /* ── Only inject once ── */
-  if (doc.getElementById("ats-particles-host")) return;
-
-  /* ── Create fixed canvas host ── */
-  var host = doc.createElement("div");
-  host.id  = "ats-particles-host";
-  host.style.cssText = [
-    "position:fixed",
-    "top:0","left:0",
-    "width:100vw","height:100vh",
-    "z-index:0",
-    "pointer-events:none",
-    "overflow:hidden",
-  ].join(";");
-  doc.body.insertBefore(host, doc.body.firstChild);
-
-  /* ── Ambient gradient overlay sitting on top of particles ── */
-  var overlay = doc.createElement("div");
-  overlay.style.cssText = [
-    "position:fixed","inset:0",
-    "background:radial-gradient(ellipse 100% 60% at 50% 0%,rgba(5,8,16,0) 0%,rgba(5,8,16,0.55) 100%)",
-    "z-index:1","pointer-events:none",
-  ].join(";");
-  doc.body.insertBefore(overlay, host.nextSibling);
-
-  /* ── Ensure app content renders above particles ── */
-  var appStyle = doc.createElement("style");
-  appStyle.textContent = [
-    "#root,",
-    "[data-testid='stApp'],",
-    "[data-testid='stAppViewContainer'],",
-    ".main { position:relative !important; z-index:2 !important; }",
-    /* Subtle neon connection-line glow via SVG filter */
-    "#ats-particles-host canvas { filter: brightness(1.05); }",
-  ].join("\n");
-  doc.head.appendChild(appStyle);
-
-  /* ── Load particles.js from CDN, then init ── */
-  var script  = doc.createElement("script");
-  script.src  = "https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js";
-  script.onload = function () {
-    parent.particlesJS("ats-particles-host", {
-      "particles": {
-        "number":  { "value": 90, "density": { "enable": true, "value_area": 900 } },
-        "color":   { "value": ["#60a5fa", "#6ee7b7", "#a78bfa"] },
-        "shape":   { "type": "circle" },
-        "opacity": {
-          "value": 0.45, "random": true,
-          "anim": { "enable": true, "speed": 0.6, "opacity_min": 0.1, "sync": false }
-        },
-        "size": {
-          "value": 2.8, "random": true,
-          "anim": { "enable": true, "speed": 1.5, "size_min": 0.5, "sync": false }
-        },
-        "line_linked": {
-          "enable": true, "distance": 130,
-          "color": "#60a5fa", "opacity": 0.13, "width": 1
-        },
-        "move": {
-          "enable": true, "speed": 0.9, "direction": "none",
-          "random": true, "straight": false, "out_mode": "out",
-          "bounce": false,
-          "attract": { "enable": false }
-        }
-      },
-      "interactivity": {
-        "detect_on": "window",
-        "events": {
-          "onhover": { "enable": true, "mode": "repulse" },
-          "onclick": { "enable": false },
-          "resize":  true
-        },
-        "modes": {
-          "repulse": { "distance": 100, "duration": 0.4 },
-          "grab":    { "distance": 140, "line_linked": { "opacity": 0.3 } }
-        }
-      },
-      "retina_detect": true
-    });
-  };
-  doc.head.appendChild(script);
-})();
-</script>
-</body>
-</html>
-"""
-    components.html(_particles_html, height=0, scrolling=False)
+    return
 
 def render_hero():
-    """Full-width hero banner with animated neon gradient mesh background."""
+    """Compact hero banner — ~45% shorter than original."""
     st.markdown("""
     <div style="
-        background: linear-gradient(135deg,rgba(5,8,16,0.95) 0%,rgba(13,27,62,0.85) 40%,rgba(26,10,46,0.85) 70%,rgba(5,8,16,0.95) 100%);
-        border: 1px solid rgba(99,179,237,0.15);
+        background: linear-gradient(135deg, rgba(10,18,45,.95), rgba(18,12,48,.92));
+        border: 1px solid rgba(91,108,255,0.15);
         border-top: 1px solid rgba(255,255,255,0.1);
-        border-radius: 24px;
-        padding: 3.5rem 2rem 3rem;
+        border-radius: 20px;
+        padding: 1.6rem 2rem 1.4rem;
         text-align: center;
         position: relative;
         overflow: hidden;
-        margin-bottom: 1.8rem;
+        margin-bottom: 1.2rem;
         backdrop-filter: blur(20px);
         -webkit-backdrop-filter: blur(20px);
-        box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 80px rgba(99,179,237,0.05), inset 0 1px 0 rgba(255,255,255,0.06);
+        box-shadow: 0 12px 32px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.05);
     ">
-      <!-- Corner glow blobs -->
+      <!-- Corner glow blobs (smaller) -->
       <div style="
-        position:absolute; top:-80px; left:-80px;
-        width:280px; height:280px; border-radius:50%;
-        background:radial-gradient(circle,rgba(124,58,237,.22),transparent 70%);
+        position:absolute; top:-50px; left:-50px;
+        width:180px; height:180px; border-radius:50%;
+        background:radial-gradient(circle,rgba(91,108,255,.18),transparent 70%);
         pointer-events:none; filter:blur(2px);
       "></div>
       <div style="
-        position:absolute; bottom:-60px; right:-60px;
-        width:260px; height:260px; border-radius:50%;
-        background:radial-gradient(circle,rgba(99,179,237,.18),transparent 70%);
+        position:absolute; bottom:-40px; right:-40px;
+        width:160px; height:160px; border-radius:50%;
+        background:radial-gradient(circle,rgba(91,108,255,.14),transparent 70%);
         pointer-events:none; filter:blur(2px);
-      "></div>
-      <div style="
-        position:absolute; top:30%; left:50%; transform:translateX(-50%);
-        width:400px; height:1px; border-radius:50%;
-        background:linear-gradient(90deg,transparent,rgba(99,179,237,.15),transparent);
-        pointer-events:none;
       "></div>
       <!-- Badge -->
       <div style="
         display:inline-block;
-        background:linear-gradient(135deg,rgba(99,179,237,.12),rgba(167,139,250,.12));
-        border:1px solid rgba(99,179,237,.3);
+        background:linear-gradient(135deg,rgba(91,108,255,.12),rgba(139,92,246,.08));
+        border:1px solid rgba(91,108,255,.3);
         border-radius:50px;
-        padding:5px 18px;
-        font-size:.76rem;
+        padding:3px 14px;
+        font-size:.72rem;
         font-weight:700;
         letter-spacing:.1em;
-        color:#63b3ed !important;
-        margin-bottom:1.2rem;
+        color:#5B6CFF !important;
+        margin-bottom:.6rem;
         text-transform:uppercase;
-        box-shadow: 0 0 20px rgba(99,179,237,.12);
+        box-shadow: 0 0 16px rgba(91,108,255,.1);
       ">✦ AI-Powered Resume Intelligence</div>
       <!-- Title -->
       <h1 style="
-        font-size:clamp(2rem,5vw,3.2rem) !important;
+        font-size:clamp(1.4rem,3.5vw,2.1rem) !important;
         font-weight:800 !important;
-        background: linear-gradient(90deg,#63b3ed 0%,#b794f4 45%,#68d391 90%);
+        background: linear-gradient(90deg,#5B6CFF 0%,#8B5CF6 45%,#68d391 90%);
         -webkit-background-clip:text;
         -webkit-text-fill-color:transparent;
-        line-height:1.15 !important;
-        margin:0 0 1rem !important;
-        filter: drop-shadow(0 0 30px rgba(99,179,237,.25));
+        line-height:1.2 !important;
+        margin:0 0 .45rem !important;
+        filter: none;
       ">🎯 Smart ATS Resume Analyzer</h1>
       <!-- Subtitle -->
       <p style="
-        color:#8899b5 !important;
-        font-size:1.05rem;
-        max-width:580px;
+        color:#A1A8C3 !important;
+        font-size:.88rem;
+        max-width:560px;
         margin:0 auto;
-        line-height:1.7;
+        line-height:1.55;
       ">
-        Upload your resume · Paste or upload a job description · Get a precision fit score,
-        skill gap analysis, ATS check &amp; a downloadable recruiter report.
+        Upload resume · Paste job description · Get fit score, skill gaps &amp; ATS report
       </p>
       <!-- Stat chips row -->
-      <div style="display:flex;justify-content:center;gap:1.2rem;margin-top:1.8rem;flex-wrap:wrap;">
-        <span style="background:rgba(104,211,145,.1);border:1px solid rgba(104,211,145,.25);border-radius:8px;padding:5px 14px;font-size:.78rem;font-weight:600;color:#68d391 !important;">⚡ TF-IDF Similarity</span>
-        <span style="background:rgba(99,179,237,.1);border:1px solid rgba(99,179,237,.25);border-radius:8px;padding:5px 14px;font-size:.78rem;font-weight:600;color:#63b3ed !important;">🔍 Skill Gap Analysis</span>
-        <span style="background:rgba(167,139,250,.1);border:1px solid rgba(167,139,250,.25);border-radius:8px;padding:5px 14px;font-size:.78rem;font-weight:600;color:#b794f4 !important;">🛡️ ATS Checker</span>
-        <span style="background:rgba(246,173,85,.1);border:1px solid rgba(246,173,85,.25);border-radius:8px;padding:5px 14px;font-size:.78rem;font-weight:600;color:#f6ad55 !important;">📄 PDF Report</span>
+      <div style="display:flex;justify-content:center;gap:.7rem;margin-top:.9rem;flex-wrap:wrap;">
+        <span style="background:rgba(104,211,145,.1);border:1px solid rgba(104,211,145,.25);border-radius:6px;padding:3px 11px;font-size:.72rem;font-weight:600;color:#68d391 !important;">⚡ TF-IDF Similarity</span>
+        <span style="background:rgba(91,108,255,.1);border:1px solid rgba(91,108,255,.25);border-radius:6px;padding:3px 11px;font-size:.72rem;font-weight:600;color:#5B6CFF !important;">🔍 Skill Gap Analysis</span>
+        <span style="background:rgba(139,92,246,.1);border:1px solid rgba(139,92,246,.25);border-radius:6px;padding:3px 11px;font-size:.72rem;font-weight:600;color:#8B5CF6 !important;">🛡️ ATS Checker</span>
+        <span style="background:rgba(246,173,85,.1);border:1px solid rgba(246,173,85,.25);border-radius:6px;padding:3px 11px;font-size:.72rem;font-weight:600;color:#f6ad55 !important;">📄 PDF Report</span>
       </div>
     </div>
     """, unsafe_allow_html=True)
 
 
-def render_glass_section(title: str, icon: str, content_html: str, accent="#63b3ed"):
+def render_glass_section(title: str, icon: str, content_html: str, accent="#5B6CFF"):
     safe = content_html.strip()
     html = (
-        '<div style="background:rgba(12,17,32,0.65);backdrop-filter:blur(20px);'
+        '<div style="background:rgba(13,19,38,0.65);backdrop-filter:blur(20px);'
         '-webkit-backdrop-filter:blur(20px);'
         'border:1px solid rgba(255,255,255,0.07);'
         'border-top:1px solid rgba(255,255,255,0.1);'
@@ -685,7 +697,7 @@ def render_big_score(fit_score: float):
 
     st.markdown(f"""
     <div style="
-        background: linear-gradient(145deg, {bg_glow}, rgba(12,17,32,0.8));
+        background: linear-gradient(145deg, {bg_glow}, rgba(13,19,38,0.8));
         border: 1px solid {border_c};
         border-top: 1px solid rgba(255,255,255,0.1);
         border-radius: 24px;
@@ -694,8 +706,8 @@ def render_big_score(fit_score: float):
         margin-bottom: 1.2rem;
         backdrop-filter: blur(20px);
         -webkit-backdrop-filter: blur(20px);
-        box-shadow: 0 0 60px {bg_glow}, 0 20px 40px rgba(0,0,0,0.4),
-                    inset 0 1px 0 rgba(255,255,255,0.06);
+        box-shadow: 0 16px 34px rgba(0,0,0,0.26),
+                    inset 0 1px 0 rgba(255,255,255,0.05);
         position: relative; overflow: hidden;
     ">
       <!-- Radial glow behind number -->
@@ -703,7 +715,7 @@ def render_big_score(fit_score: float):
         width:200px;height:200px;border-radius:50%;
         background:radial-gradient(circle,{bg_glow},transparent 70%);
         pointer-events:none;filter:blur(8px);"></div>
-      <div style="color:#8899b5 !important; font-size:.72rem; font-weight:700;
+      <div style="color:#A1A8C3 !important; font-size:.72rem; font-weight:700;
                   letter-spacing:.14em; text-transform:uppercase; margin-bottom:.5rem;">
         FINAL FIT SCORE
       </div>
@@ -713,7 +725,7 @@ def render_big_score(fit_score: float):
         color:{color} !important;
         line-height:1;
         font-family:'JetBrains Mono',monospace !important;
-        text-shadow: 0 0 30px {color}88, 0 0 60px {color}44;
+        text-shadow: none;
         position:relative; z-index:1;
       ">{fit_score:.1f}<span style="font-size:2.2rem;color:{color} !important;">%</span></div>
       <div style="
@@ -729,7 +741,7 @@ def render_big_score(fit_score: float):
         box-shadow: 0 0 16px {bg_glow};
         letter-spacing:.04em;
       ">{label}</div>
-      <div style="color:#4a5568 !important; font-size:.72rem; margin-top:.9rem; letter-spacing:.02em;">
+      <div style="color:#A1A8C3 !important; font-size:.72rem; margin-top:.9rem; letter-spacing:.02em;">
         Fit Score = 0.6 × TF-IDF Similarity + 0.4 × Skill Match Score
       </div>
     </div>
@@ -739,7 +751,7 @@ def render_big_score(fit_score: float):
 def render_metric_card(icon: str, label: str, value: str, sub: str, accent: str):
     st.markdown(f"""
     <div style="
-        background: rgba(12,17,32,0.65);
+        background: rgba(13,19,38,0.65);
         backdrop-filter: blur(16px);
         -webkit-backdrop-filter: blur(16px);
         border: 1px solid rgba(255,255,255,0.07);
@@ -759,17 +771,17 @@ def render_metric_card(icon: str, label: str, value: str, sub: str, accent: str)
         font-size:2.1rem !important; font-weight:800 !important;
         color:{accent} !important; line-height:1; margin-bottom:.3rem;
         font-family:'JetBrains Mono',monospace !important;
-        text-shadow: 0 0 20px {accent}66;
+        text-shadow: none;
       ">{value}</div>
-      <div style="font-weight:700; font-size:.85rem; color:#e2e8f0 !important;
+      <div style="font-weight:700; font-size:.85rem; color:#F8FAFC !important;
                   margin-bottom:.25rem;">{label}</div>
-      <div style="font-size:.74rem; color:#718096 !important; letter-spacing:.03em;">{sub}</div>
+      <div style="font-size:.74rem; color:#A1A8C3 !important; letter-spacing:.03em;">{sub}</div>
     </div>
     """, unsafe_allow_html=True)
 
 
 def render_gradient_progress(label: str, value: float,
-                              color_start="#63b3ed", color_end="#b794f4"):
+                              color_start="#5B6CFF", color_end="#8B5CF6"):
     pct = min(max(value, 0), 100)
     st.markdown(f"""
     <div style="margin-bottom:1rem;">
@@ -777,7 +789,7 @@ def render_gradient_progress(label: str, value: float,
         display:flex; justify-content:space-between;
         margin-bottom:5px;
       ">
-        <span style="font-size:.82rem; font-weight:600; color:#a0aec0 !important;">
+        <span style="font-size:.82rem; font-weight:600; color:#A1A8C3 !important;">
           {label}
         </span>
         <span style="
@@ -809,9 +821,9 @@ def render_gradient_progress(label: str, value: float,
 
 def render_skill_pills(skills: list, variant: str = "matched"):
     styles = {
-        "matched": ("rgba(6,95,70,0.55)",  "#68d391", "rgba(104,211,145,.35)", "rgba(104,211,145,.15)"),
+        "matched": ("rgba(8,35,25,0.65)",   "#68d391", "rgba(104,211,145,.35)", "rgba(104,211,145,.15)"),
         "missing": ("rgba(120,10,10,0.45)", "#fc8181", "rgba(252,129,129,.35)", "rgba(252,129,129,.12)"),
-        "extra":   ("rgba(20,30,80,0.55)",  "#63b3ed", "rgba(99,179,237,.35)",  "rgba(99,179,237,.12)"),
+        "extra":   ("rgba(13,19,38,0.65)",  "#5B6CFF", "rgba(91,108,255,.35)",  "rgba(91,108,255,.12)"),
     }
     bg, text, border, glow = styles.get(variant, styles["matched"])
     if not skills:
@@ -842,7 +854,7 @@ def render_suggestion_card(text: str, priority: str = "tip"):
         "high":   ("#fc8181", "rgba(252,129,129,.08)", "rgba(252,129,129,.25)", "⚠️"),
         "medium": ("#f6ad55", "rgba(246,173,85,.08)",  "rgba(246,173,85,.25)",  "⚡"),
         "good":   ("#68d391", "rgba(104,211,145,.08)", "rgba(104,211,145,.25)", "✅"),
-        "tip":    ("#63b3ed", "rgba(99,179,237,.08)",  "rgba(99,179,237,.25)",  "💡"),
+        "tip":    ("#5B6CFF", "rgba(91,108,255,.08)",  "rgba(91,108,255,.25)",  "💡"),
     }
     tc, bg, br, icon = palettes.get(priority, palettes["tip"])
     clean = re.sub(r"^[^\w]+\s*", "", text)
@@ -859,7 +871,7 @@ def render_suggestion_card(text: str, priority: str = "tip"):
         gap:.65rem;
     ">
       <span style="font-size:1.1rem; flex-shrink:0; padding-top:1px;">{icon}</span>
-      <span style="font-size:.88rem; line-height:1.55; color:#e2e8f0 !important;">
+      <span style="font-size:.88rem; line-height:1.55; color:#F8FAFC !important;">
         {clean}
       </span>
     </div>
@@ -870,21 +882,21 @@ def render_footer():
     st.markdown("""
     <div style="
         text-align:center;
-        padding: 2.5rem 0 1.5rem;
-        border-top: 1px solid rgba(99,179,237,0.1);
-        margin-top: 2.5rem;
+        padding: 1.2rem 0 1rem;
+        border-top: 1px solid rgba(91,108,255,0.1);
+        margin-top: 1.5rem;
         position: relative;
     ">
       <div style="
         position:absolute;top:0;left:50%;transform:translateX(-50%);
-        width:120px;height:1px;
-        background:linear-gradient(90deg,transparent,rgba(99,179,237,.4),transparent);
+        width:100px;height:1px;
+        background:linear-gradient(90deg,transparent,rgba(91,108,255,.4),transparent);
       "></div>
-      <p style="color:#4a5568 !important; font-size:.82rem; margin:0; letter-spacing:.04em;">
+      <p style="color:#A1A8C3 !important; font-size:.78rem; margin:0; letter-spacing:.03em;">
         Built with ❤️ using &nbsp;
-        <span style="color:#63b3ed !important; font-weight:700;">Streamlit</span>
+        <span style="color:#5B6CFF !important; font-weight:700;">Streamlit</span>
         &nbsp;·&nbsp;
-        <span style="color:#b794f4 !important; font-weight:700;">scikit-learn</span>
+        <span style="color:#8B5CF6 !important; font-weight:700;">scikit-learn</span>
         &nbsp;·&nbsp;
         <span style="color:#68d391 !important; font-weight:700;">ReportLab</span>
         &nbsp;·&nbsp;
@@ -892,9 +904,9 @@ def render_footer():
         &nbsp;·&nbsp;
         <span style="color:#fc8181 !important; font-weight:700;">Folium</span>
         &nbsp;·&nbsp;
-        <span style="color:#b794f4 !important; font-weight:700;">Geopy</span>
+        <span style="color:#8B5CF6 !important; font-weight:700;">Geopy</span>
       </p>
-      <p style="color:#2d3748 !important; font-size:.73rem; margin:.5rem 0 0; letter-spacing:.05em;">
+      <p style="color:#A1A8C3 !important; font-size:.7rem; margin:.3rem 0 0; letter-spacing:.04em;">
         Smart ATS Resume Analyzer &nbsp;·&nbsp; For demo &amp; educational use
       </p>
     </div>
@@ -1041,13 +1053,13 @@ def generate_suggestions(matched: set, missing: set,
 # ══════════════════════════════════════════════════════════════════
 
 def _dark(fig, ax):
-    fig.patch.set_facecolor("#0c1120")
-    ax.set_facecolor("#0c1120")
+    fig.patch.set_facecolor("#070B18")
+    ax.set_facecolor("#070B18")
     for spine in ax.spines.values():
         spine.set_edgecolor("#1e293b")
-    ax.tick_params(colors="#718096", labelsize=9)
-    ax.xaxis.label.set_color("#718096")
-    ax.yaxis.label.set_color("#718096")
+    ax.tick_params(colors="#A1A8C3", labelsize=9)
+    ax.xaxis.label.set_color("#A1A8C3")
+    ax.yaxis.label.set_color("#A1A8C3")
     ax.title.set_color("#e2e8f0")
     return fig, ax
 
@@ -1115,7 +1127,7 @@ def plot_score_breakdown(fit: float, tfidf: float, skill: float) -> io.BytesIO:
     fig, ax = _dark(fig, ax)
     labels  = ["Fit Score", "TF-IDF Similarity", "Skill Match"]
     vals    = [fit, tfidf, skill]
-    bcolors = ["#68d391", "#63b3ed", "#b794f4"]
+    bcolors = ["#68d391", "#5B6CFF", "#8B5CF6"]
     bars = ax.barh(labels, vals, color=bcolors,
                    edgecolor="#0c1120", linewidth=0.7,
                    height=0.5, zorder=3)
@@ -1138,7 +1150,7 @@ def plot_section_scores(section_scores: dict) -> io.BytesIO:
     """Horizontal bar chart for section-wise resume scores."""
     sections = list(section_scores.keys())
     scores   = [section_scores[s] for s in sections]
-    palette  = ["#63b3ed", "#b794f4", "#68d391", "#f6ad55"]
+    palette  = ["#5B6CFF", "#8B5CF6", "#68d391", "#f6ad55"]
 
     fig, ax = plt.subplots(figsize=(7, 3.2))
     fig, ax = _dark(fig, ax)
@@ -1197,7 +1209,7 @@ def generate_pdf_report(fit_score, tfidf_score, skill_score,
         Paragraph("🎯  Smart ATS Resume Analyzer", title_s),
         Paragraph("Automated Candidate Fit Report", sub_s),
         HRFlowable(width="100%", thickness=1.5,
-                   color=colors.HexColor("#065f46"), spaceAfter=10),
+                   color=colors.HexColor("#4F46E5"), spaceAfter=10),
         Paragraph("Score Summary", heading_s),
     ]
 
@@ -1209,7 +1221,7 @@ def generate_pdf_report(fit_score, tfidf_score, skill_score,
     ]
     tbl = Table(score_data, colWidths=[8*cm, 4*cm, 4.5*cm])
     tbl.setStyle(TableStyle([
-        ("BACKGROUND",    (0,0),(-1,0),  colors.HexColor("#065f46")),
+        ("BACKGROUND",    (0,0),(-1,0),  colors.HexColor("#4F46E5")),
         ("TEXTCOLOR",     (0,0),(-1,0),  colors.white),
         ("FONTNAME",      (0,0),(-1,0),  "Helvetica-Bold"),
         ("FONTSIZE",      (0,0),(-1,0),  11),
@@ -1621,6 +1633,43 @@ def extract_locations(jd_text: str) -> list[str]:
     return found
 
 
+# Reliable fallback coordinates for common locations used in demo JDs.
+# This keeps Map Insights functional when an external geocoder is unavailable.
+_FALLBACK_COORDS = {
+    "bengaluru, india": (12.9716, 77.5946),
+    "mumbai, india": (19.0760, 72.8777),
+    "new delhi, india": (28.6139, 77.2090),
+    "hyderabad, india": (17.3850, 78.4867),
+    "chennai, india": (13.0827, 80.2707),
+    "pune, india": (18.5204, 73.8567),
+    "kolkata, india": (22.5726, 88.3639),
+    "ahmedabad, india": (23.0225, 72.5714),
+    "jaipur, india": (26.9124, 75.7873),
+    "noida, india": (28.5355, 77.3910),
+    "gurugram, india": (28.4595, 77.0266),
+    "kochi, india": (9.9312, 76.2673),
+    "chandigarh, india": (30.7333, 76.7794),
+    "indore, india": (22.7196, 75.8577),
+    "bhubaneswar, india": (20.2961, 85.8245),
+    "singapore": (1.3521, 103.8198),
+    "london, uk": (51.5074, -0.1278),
+    "new york, usa": (40.7128, -74.0060),
+    "san francisco, usa": (37.7749, -122.4194),
+    "los angeles, usa": (34.0522, -118.2437),
+    "chicago, usa": (41.8781, -87.6298),
+    "austin, usa": (30.2672, -97.7431),
+    "seattle, usa": (47.6062, -122.3321),
+    "toronto, canada": (43.6532, -79.3832),
+    "dubai, united arab emirates": (25.2048, 55.2708),
+    "united arab emirates": (24.4539, 54.3773),
+    "india": (20.5937, 78.9629),
+    "united states": (39.8283, -98.5795),
+    "united kingdom": (55.3781, -3.4360),
+    "canada": (56.1304, -106.3468),
+    "australia": (-25.2744, 133.7751),
+}
+
+
 @st.cache_data(show_spinner=False)
 def geocode_locations(locations: tuple) -> pd.DataFrame:
     """
@@ -1639,30 +1688,42 @@ def geocode_locations(locations: tuple) -> pd.DataFrame:
     geocoded_keys: set[str] = set()
 
     for loc in unique_locs:
-        key = loc.lower()
+        key = loc.lower().strip()
         if key in geocoded_keys:
             continue
+
+        # Prefer the live geocoder, but never make the UI depend on it.
         try:
             geo = geolocator.geocode(loc, language="en", exactly_one=True)
-            time.sleep(0.15)   # Nominatim rate limit: max 1 req/s
-            if geo and geo.latitude is not None:
+            if geo and geo.latitude is not None and geo.longitude is not None:
                 rows.append({
                     "location_name": loc,
-                    "lat":           float(geo.latitude),
-                    "lon":           float(geo.longitude),
-                    "frequency":     freq_counter[loc],
+                    "lat": float(geo.latitude),
+                    "lon": float(geo.longitude),
+                    "frequency": freq_counter[loc],
                 })
                 geocoded_keys.add(key)
+                continue
         except (GeocoderTimedOut, GeocoderUnavailable):
-            continue
+            pass
         except Exception:
-            continue
+            pass
+
+        # Offline/demo fallback for known locations.
+        coords = _FALLBACK_COORDS.get(key)
+        if coords:
+            rows.append({
+                "location_name": loc,
+                "lat": float(coords[0]),
+                "lon": float(coords[1]),
+                "frequency": freq_counter[loc],
+            })
+            geocoded_keys.add(key)
 
     if not rows:
         return pd.DataFrame(columns=["location_name", "lat", "lon", "frequency"])
 
-    df = pd.DataFrame(rows).drop_duplicates(subset=["location_name"])
-    return df
+    return pd.DataFrame(rows).drop_duplicates(subset=["location_name"])
 
 
 def render_job_map(df: pd.DataFrame, top_n: int = 50) -> None:
@@ -1725,17 +1786,17 @@ def render_job_map(df: pd.DataFrame, top_n: int = 50) -> None:
         <div style="
             font-family: 'Segoe UI', Arial, sans-serif;
             min-width: 160px;
-            background: #0c1120;
-            color: #e2e8f0;
+            background: #0D1326;
+            color: #F8FAFC;
             border-radius: 8px;
             padding: 10px 14px;
         ">
-          <b style="color:#63b3ed; font-size:14px;">📍 {row['location_name']}</b>
+          <b style="color:#5B6CFF; font-size:14px;">📍 {row['location_name']}</b>
           <hr style="border:none;border-top:1px solid #2d3748;margin:6px 0;">
-          <span style="color:#b794f4; font-size:13px;">
+          <span style="color:#8B5CF6; font-size:13px;">
             Mentions: <b>{freq}</b>
           </span><br>
-          <span style="color:#718096; font-size:11px;">
+          <span style="color:#A1A8C3; font-size:11px;">
             {row['lat']:.3f}°, {row['lon']:.3f}°
           </span>
         </div>
@@ -1744,7 +1805,7 @@ def render_job_map(df: pd.DataFrame, top_n: int = 50) -> None:
         folium.CircleMarker(
             location=[row["lat"], row["lon"]],
             radius=radius,
-            color="#63b3ed",
+            color="#5B6CFF",
             fill=True,
             fill_color="#3b82f6",
             fill_opacity=opacity,
@@ -1753,9 +1814,9 @@ def render_job_map(df: pd.DataFrame, top_n: int = 50) -> None:
             tooltip=folium.Tooltip(
                 f"<b>{row['location_name']}</b> — {freq} mention{'s' if freq!=1 else ''}",
                 style=(
-                    "background-color:#0c1120;"
-                    "color:#e2e8f0;"
-                    "border:1px solid #63b3ed;"
+                    "background-color:#0D1326;"
+                    "color:#F8FAFC;"
+                    "border:1px solid #5B6CFF;"
                     "border-radius:6px;"
                     "font-size:12px;"
                     "padding:4px 8px;"
@@ -1776,8 +1837,8 @@ def render_job_map(df: pd.DataFrame, top_n: int = 50) -> None:
     <div style="
         border-radius: 16px;
         overflow: hidden;
-        border: 1px solid rgba(99,179,237,0.18);
-        box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 40px rgba(99,179,237,0.06);
+        border: 1px solid rgba(91,108,255,0.18);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 40px rgba(91,108,255,0.06);
     ">
         {map_html}
     </div>
@@ -1801,11 +1862,11 @@ def render_location_stats(df: pd.DataFrame, raw_locations: list,
     with c1:
         render_metric_card("📍", "Locations Detected",
                            str(len(raw_locations)),
-                           "total location mentions", "#63b3ed")
+                           "total location mentions", "#5B6CFF")
     with c2:
         render_metric_card("🌏", "Unique Locations",
                            str(total_unique),
-                           "successfully geocoded", "#b794f4")
+                           "successfully geocoded", "#8B5CF6")
     with c3:
         label = "🏠 Remote Available" if remote_found else "🏢 On-site Only"
         render_metric_card("📡", "Work Mode",
@@ -1818,26 +1879,26 @@ def render_location_stats(df: pd.DataFrame, raw_locations: list,
     st.markdown(
         f"""
         <div style="
-            background:linear-gradient(135deg,rgba(99,179,237,0.08),rgba(183,148,244,0.06));
-            border:1px solid rgba(99,179,237,0.2);
+            background:linear-gradient(135deg,rgba(91,108,255,0.08),rgba(139,92,246,0.06));
+            border:1px solid rgba(91,108,255,0.2);
             border-radius:14px; padding:1rem 1.4rem;
             display:flex; align-items:center; gap:1rem;
             margin-bottom:1rem;
         ">
           <span style="font-size:2rem;">🏆</span>
           <div>
-            <div style="font-size:.75rem;color:#718096 !important;
+            <div style="font-size:.75rem;color:#A1A8C3 !important;
                         font-weight:700;letter-spacing:.1em;
                         text-transform:uppercase;margin-bottom:3px;">
               Most Frequent Job Location
             </div>
             <div style="font-size:1.25rem !important; font-weight:800 !important;
-                        color:#63b3ed !important;
-                        text-shadow:0 0 18px rgba(99,179,237,0.45);">
+                        color:#5B6CFF !important;
+                        text-shadow:0 0 18px rgba(91,108,255,0.45);">
               {top_name}
             </div>
-            <div style="font-size:.8rem;color:#a0aec0 !important;margin-top:2px;">
-              Mentioned&nbsp;<b style="color:#b794f4 !important;">{top_count}&nbsp;time{"s" if top_count!=1 else ""}</b>
+            <div style="font-size:.8rem;color:#A1A8C3 !important;margin-top:2px;">
+              Mentioned&nbsp;<b style="color:#8B5CF6 !important;">{top_count}&nbsp;time{"s" if top_count!=1 else ""}</b>
               &nbsp;in the job description
             </div>
           </div>
@@ -1848,7 +1909,7 @@ def render_location_stats(df: pd.DataFrame, raw_locations: list,
 
     # ── Location frequency breakdown ──────────────────────────────
     st.markdown(
-        "<p style='font-size:.82rem;font-weight:700;color:#a0aec0 !important;"
+        "<p style='font-size:.82rem;font-weight:700;color:#A1A8C3 !important;"
         "letter-spacing:.08em;text-transform:uppercase;margin-bottom:.6rem;'>"
         "Location Frequency Breakdown</p>",
         unsafe_allow_html=True,
@@ -1867,13 +1928,13 @@ def render_location_stats(df: pd.DataFrame, raw_locations: list,
               <div style="flex:1;background:rgba(255,255,255,0.05);
                           border-radius:999px;height:8px;overflow:hidden;">
                 <div style="width:{bar_pct}%;height:100%;
-                  background:linear-gradient(90deg,#63b3ed,#b794f4);
+                  background:linear-gradient(90deg,#5B6CFF,#8B5CF6);
                   border-radius:999px;
-                  box-shadow:0 0 10px rgba(99,179,237,0.4);"></div>
+                  box-shadow:0 0 10px rgba(91,108,255,0.4);"></div>
               </div>
               <span style="min-width:28px;text-align:right;
                            font-size:.82rem;font-weight:700;
-                           color:#b794f4 !important;
+                           color:#8B5CF6 !important;
                            font-family:'JetBrains Mono',monospace !important;">
                 ×{int(row['frequency'])}
               </span>
@@ -1905,6 +1966,199 @@ def render_location_stats(df: pd.DataFrame, raw_locations: list,
 
 
 # ══════════════════════════════════════════════════════════════════
+#  DATA ENGINEERING PIPELINE INTEGRATION
+# ══════════════════════════════════════════════════════════════════
+
+def run_resume_data_pipeline(resume_text: str, filename: str):
+    """
+    Run the resume through the Data Engineering pipeline.
+
+    Stages:
+        Ingestion → Cleaning → Transformation → Validation
+
+    PDF ingestion/text extraction is handled by the existing Streamlit
+    uploader and extract_text_from_pdf() function.
+    """
+
+    # Data ingestion result from the uploaded PDF
+    ingested_resume = {
+        "filename": filename,
+        "text": resume_text,
+    }
+
+    # Data cleaning using the dedicated Data Engineering module
+    cleaned_text = pipeline_clean_text(ingested_resume["text"])
+
+    # Data transformation into structured fields
+    transformed_resume = transform_resume({
+        "filename": filename,
+        "cleaned_text": cleaned_text,
+    })
+
+    # Keep duplicate detection across analyses during this Streamlit session
+    if "pipeline_seen_emails" not in st.session_state:
+        st.session_state.pipeline_seen_emails = set()
+
+    validation_result = validate_resume(
+        transformed_resume,
+        st.session_state.pipeline_seen_emails,
+    )
+
+    transformed_resume.update(validation_result)
+    transformed_resume["cleaned_text"] = cleaned_text
+
+    return transformed_resume
+
+
+def _pipeline_display_value(value):
+    """Convert sets/lists/None into clean display and CSV values."""
+    if value is None:
+        return ""
+    if isinstance(value, (set, list, tuple)):
+        return ", ".join(sorted(str(v) for v in value))
+    return str(value)
+
+
+def build_pipeline_dataframe(pipeline_data: dict) -> pd.DataFrame:
+    """Create a clean one-row structured Data Engineering output."""
+    fields = [
+        "filename", "name", "email", "phone", "skills",
+        "education", "experience", "projects", "certifications",
+        "achievements", "email_valid", "phone_valid", "name_valid",
+        "missing_sections", "resume_length_valid", "duplicate",
+        "data_quality_score", "status"
+    ]
+
+    return pd.DataFrame([{
+        field: _pipeline_display_value(pipeline_data.get(field, ""))
+        for field in fields
+    }])
+
+
+def render_data_engineering_dashboard(pipeline_data: dict):
+    """Render the Data Engineering pipeline results in Streamlit."""
+
+    st.markdown("### ⚙️ Data Engineering Pipeline")
+    st.caption(
+        "PDF ingestion → text extraction → cleaning → transformation → validation"
+    )
+
+    # Pipeline stages
+    stage_cols = st.columns(5, gap="small")
+    stages = [
+        ("📥", "Ingestion", "Completed"),
+        ("📄", "Extraction", "Completed"),
+        ("🧹", "Cleaning", "Completed"),
+        ("🔄", "Transformation", "Completed"),
+        ("🛡️", "Validation", pipeline_data.get("status", "REVIEW")),
+    ]
+
+    for col, (icon, title, status) in zip(stage_cols, stages):
+        with col:
+            render_metric_card(
+                icon, title, status,
+                "Pipeline stage",
+                "#68d391" if status in {"Completed", "VALID"} else "#f6ad55"
+            )
+
+    st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
+
+    # Validation metrics
+    v1, v2, v3, v4 = st.columns(4, gap="small")
+
+    with v1:
+        render_metric_card(
+            "📊", "Data Quality",
+            f"{pipeline_data.get('data_quality_score', 0)}/100",
+            "Overall record quality",
+            "#5B6CFF"
+        )
+
+    with v2:
+        render_metric_card(
+            "📧", "Email",
+            "VALID" if pipeline_data.get("email_valid") else "INVALID",
+            "Format validation",
+            "#68d391" if pipeline_data.get("email_valid") else "#fc8181"
+        )
+
+    with v3:
+        render_metric_card(
+            "📱", "Phone",
+            "VALID" if pipeline_data.get("phone_valid") else "INVALID",
+            "Format validation",
+            "#68d391" if pipeline_data.get("phone_valid") else "#fc8181"
+        )
+
+    with v4:
+        render_metric_card(
+            "🔁", "Duplicate",
+            "YES" if pipeline_data.get("duplicate") else "NO",
+            "Email-based check",
+            "#fc8181" if pipeline_data.get("duplicate") else "#68d391"
+        )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Overall status
+    if pipeline_data.get("status") == "VALID":
+        st.success("✅ Data validation completed — record is VALID.")
+    else:
+        st.warning("⚠️ Data validation completed — record requires REVIEW.")
+
+    # Missing sections
+    missing = pipeline_data.get("missing_sections", "")
+    if missing:
+        st.warning(f"Missing required sections: {missing}")
+
+    # Structured data
+    with st.expander("📦 View Structured Resume Data", expanded=True):
+        structured_fields = [
+            "filename", "name", "email", "phone", "skills",
+            "education", "experience", "projects", "certifications",
+            "achievements"
+        ]
+        structured_df = pd.DataFrame({
+            "Field": structured_fields,
+            "Extracted Value": [
+                _pipeline_display_value(pipeline_data.get(field, ""))
+                for field in structured_fields
+            ]
+        })
+        st.dataframe(structured_df, width="stretch", hide_index=True)
+
+    # Validation details
+    with st.expander("🛡️ View Validation Details"):
+        validation_rows = [
+            ("Name validation", "PASS" if pipeline_data.get("name_valid") else "FAIL"),
+            ("Email validation", "PASS" if pipeline_data.get("email_valid") else "FAIL"),
+            ("Phone validation", "PASS" if pipeline_data.get("phone_valid") else "FAIL"),
+            ("Required sections", "PASS" if not missing else "REVIEW"),
+            ("Resume length", "PASS" if pipeline_data.get("resume_length_valid") else "FAIL"),
+            ("Duplicate detection", "DUPLICATE" if pipeline_data.get("duplicate") else "UNIQUE"),
+            ("Overall status", pipeline_data.get("status", "REVIEW")),
+        ]
+        validation_df = pd.DataFrame(
+            validation_rows,
+            columns=["Validation Check", "Result"]
+        )
+        st.dataframe(validation_df, width="stretch", hide_index=True)
+
+    # CSV download for the current processed record
+    output_df = build_pipeline_dataframe(pipeline_data)
+    csv_bytes = output_df.to_csv(index=False).encode("utf-8")
+
+    st.download_button(
+        "⬇️ Download Processed Resume Data (CSV)",
+        data=csv_bytes,
+        file_name="processed_resume_data.csv",
+        mime="text/csv",
+        width="stretch",
+        key="pipeline_processed_csv",
+    )
+
+
+# ══════════════════════════════════════════════════════════════════
 #  MAIN APP
 # ══════════════════════════════════════════════════════════════════
 
@@ -1917,27 +2171,76 @@ def main():
     render_hero()
 
     # ── 2. INPUT PANEL ────────────────────────────────────────────
-    col_l, col_r = st.columns([1, 1], gap="large")
+    st.markdown("""
+    <div style="
+        display:grid;
+        grid-template-columns:1fr 1fr;
+        gap:1rem;
+        margin-bottom:1rem;
+    " id="input-grid-wrapper">
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Card wrapper labels
+    st.markdown("""
+    <div style="display:flex;gap:1rem;margin-bottom:0.15rem;">
+      <div style="flex:1;
+        background:#0D1326;
+        border:1.5px solid rgba(91,108,255,0.18);
+        border-top:1.5px solid rgba(255,255,255,0.09);
+        border-radius:18px;
+        padding:1.1rem 1.3rem 0.8rem;
+        backdrop-filter:blur(18px);
+        -webkit-backdrop-filter:blur(18px);
+        box-shadow:0 8px 32px rgba(0,0,0,0.35),inset 0 1px 0 rgba(255,255,255,0.05);
+        transition:border-color .25s ease,box-shadow .25s ease;
+      ">
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.65rem;
+                    padding-bottom:.55rem;border-bottom:1px solid rgba(255,255,255,0.05);">
+          <span style="font-size:1rem;filter:drop-shadow(0 0 6px rgba(91,108,255,0.6));">📄</span>
+          <span style="font-weight:700;font-size:.88rem;color:#5B6CFF !important;
+                       letter-spacing:.02em;text-shadow:0 0 14px rgba(91,108,255,0.4);">
+            Resume Upload
+          </span>
+          <span style="margin-left:auto;font-size:.7rem;color:#4a5568 !important;
+                       background:rgba(91,108,255,0.08);border:1px solid rgba(91,108,255,0.18);
+                       border-radius:4px;padding:2px 7px;font-weight:600;">PDF</span>
+        </div>
+      </div>
+      <div style="flex:1;
+        background:#0D1326;
+        border:1.5px solid rgba(91,108,255,0.18);
+        border-top:1.5px solid rgba(255,255,255,0.09);
+        border-radius:18px;
+        padding:1.1rem 1.3rem 0.8rem;
+        backdrop-filter:blur(18px);
+        -webkit-backdrop-filter:blur(18px);
+        box-shadow:0 8px 32px rgba(0,0,0,0.35),inset 0 1px 0 rgba(255,255,255,0.05);
+        transition:border-color .25s ease,box-shadow .25s ease;
+      ">
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.65rem;
+                    padding-bottom:.55rem;border-bottom:1px solid rgba(255,255,255,0.05);">
+          <span style="font-size:1rem;filter:drop-shadow(0 0 6px rgba(91,108,255,0.6));">📋</span>
+          <span style="font-weight:700;font-size:.88rem;color:#8B5CF6 !important;
+                       letter-spacing:.02em;text-shadow:0 0 14px rgba(91,108,255,0.4);">
+            Job Description
+          </span>
+          <span style="margin-left:auto;font-size:.7rem;color:#4a5568 !important;
+                       background:rgba(91,108,255,0.08);border:1px solid rgba(91,108,255,0.18);
+                       border-radius:4px;padding:2px 7px;font-weight:600;">PDF · TXT · Paste</span>
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col_l, col_r = st.columns([1, 1], gap="small")
 
     with col_l:
-        st.markdown(
-            "<p style='font-weight:700;font-size:.95rem;"
-            "color:#63b3ed !important;margin-bottom:.5rem;'>"
-            "📄 Upload Resume (PDF)</p>",
-            unsafe_allow_html=True,
-        )
         uploaded_file = st.file_uploader(
             "resume_upload", type=["pdf"], label_visibility="collapsed"
         )
 
     with col_r:
-        st.markdown(
-            "<p style='font-weight:700;font-size:.95rem;"
-            "color:#63b3ed !important;margin-bottom:.5rem;'>"
-            "📋 Job Description</p>",
-            unsafe_allow_html=True,
-        )
-
         # ─── NEW CODE START ─── Feature 1: JD File Upload ───────
         jd_file = st.file_uploader(
             "Upload JD (PDF or TXT) — or paste below",
@@ -1965,11 +2268,13 @@ def main():
             )
         # ─── NEW CODE END ───────────────────────────────────────
 
-    st.markdown("<br>", unsafe_allow_html=True)
-    _, btn_col, _ = st.columns([2, 1, 2])
+    # ── Analyze button — centered, compact, with glow ─────────────
+    st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
+    _, btn_col, _ = st.columns([1.8, 1, 1.8])
     with btn_col:
-        analyze_btn = st.button("🔍  Analyze Resume", use_container_width=True)
+        analyze_btn = st.button("🔍  Analyze Resume", width="stretch")
 
+    st.markdown("<div style='height:.4rem'></div>", unsafe_allow_html=True)
     st.divider()
 
     # ── 3. ANALYSIS ───────────────────────────────────────────────
@@ -1986,6 +2291,14 @@ def main():
             if not resume_text.strip():
                 st.error("❌  Could not extract text. Ensure this is a text-based (not scanned) PDF.")
                 return
+
+            # ========================================================
+            # DATA ENGINEERING PIPELINE
+            # ========================================================
+            pipeline_data = run_resume_data_pipeline(
+                resume_text,
+                uploaded_file.name
+            )
 
             resume_clean = clean_text(resume_text)
             jd_clean     = clean_text(jd_input)
@@ -2011,6 +2324,8 @@ def main():
             ats_checks      = run_ats_checks(resume_text)
             # ─── NEW CODE END ────────────────────────────────────
 
+        st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
+
         # ── BIG SCORE DISPLAY ─────────────────────────────────────
         render_big_score(fit_score)
 
@@ -2019,11 +2334,11 @@ def main():
         with m1:
             render_metric_card("📐", "TF-IDF Similarity",
                                f"{tfidf_score:.1f}%",
-                               "Contextual keyword match", "#63b3ed")
+                               "Contextual keyword match", "#5B6CFF")
         with m2:
             render_metric_card("🧩", "Skill Match Score",
                                f"{skill_score:.1f}%",
-                               "Based on JD + predefined skills", "#b794f4")
+                               "Based on JD + predefined skills", "#8B5CF6")
         with m3:
             render_metric_card("✅", "Matched Skills",
                                str(len(resume_matched)),
@@ -2033,18 +2348,18 @@ def main():
                                str(len(missing_skills)),
                                "Skills to add to resume", "#fc8181")
 
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<div style='height:.35rem'></div>", unsafe_allow_html=True)
 
         # ── GRADIENT PROGRESS BARS ────────────────────────────────
         pb_l, pb_r = st.columns([1, 1], gap="large")
         with pb_l:
             render_gradient_progress("🎯 Final Fit Score",
-                                     fit_score, "#68d391", "#63b3ed")
+                                     fit_score, "#68d391", "#5B6CFF")
             render_gradient_progress("📐 TF-IDF Similarity",
-                                     tfidf_score, "#63b3ed", "#b794f4")
+                                     tfidf_score, "#5B6CFF", "#8B5CF6")
         with pb_r:
             render_gradient_progress("🧩 Skill Match Score",
-                                     skill_score, "#b794f4", "#f6ad55")
+                                     skill_score, "#8B5CF6", "#f6ad55")
             pct_pool = min(len(jd_required) / max(len(skill_pool), 1) * 100, 100)
             render_gradient_progress("📋 JD Coverage in Skill Pool",
                                      pct_pool, "#f6ad55", "#fc8181")
@@ -2053,7 +2368,8 @@ def main():
 
         # ── TABS ──────────────────────────────────────────────────
         # ─── NEW CODE START ─── extended tab list ────────────────
-        tab_ov, tab_sk, tab_freq, tab_sug, tab_kw, tab_ats, tab_improve, tab_map, tab_exp = st.tabs([
+        tab_de, tab_ov, tab_sk, tab_freq, tab_sug, tab_kw, tab_ats, tab_improve, tab_map, tab_exp = st.tabs([
+            "⚙️ Data Pipeline",
             "📊 Overview",
             "🧠 Skill Analysis",
             "📈 Keyword Frequency",
@@ -2066,12 +2382,16 @@ def main():
         ])
         # ─── NEW CODE END ────────────────────────────────────────
 
+        # ── TAB: DATA ENGINEERING PIPELINE ─────────────────────────
+        with tab_de:
+            render_data_engineering_dashboard(pipeline_data)
+
         # ── TAB: OVERVIEW ─────────────────────────────────────────
         with tab_ov:
             c1, c2 = st.columns([1, 1], gap="large")
             with c1:
                 st.markdown(
-                    "<p style='font-weight:700;color:#a0aec0 !important;"
+                    "<p style='font-weight:700;color:#A1A8C3 !important;"
                     "font-size:.88rem;margin-bottom:.5rem;'>SKILL COVERAGE</p>",
                     unsafe_allow_html=True)
                 st.image(plot_matched_vs_missing(
@@ -2079,7 +2399,7 @@ def main():
                          use_container_width=True)
             with c2:
                 st.markdown(
-                    "<p style='font-weight:700;color:#a0aec0 !important;"
+                    "<p style='font-weight:700;color:#A1A8C3 !important;"
                     "font-size:.88rem;margin-bottom:.5rem;'>SCORE BREAKDOWN</p>",
                     unsafe_allow_html=True)
                 st.image(plot_score_breakdown(fit_score, tfidf_score, skill_score),
@@ -2097,7 +2417,7 @@ def main():
             if section_scores:
                 st.markdown("<br>", unsafe_allow_html=True)
                 st.markdown(
-                    "<p style='font-weight:700;color:#a0aec0 !important;"
+                    "<p style='font-weight:700;color:#A1A8C3 !important;"
                     "font-size:.88rem;margin-bottom:.5rem;'>SECTION-WISE RESUME SCORE</p>",
                     unsafe_allow_html=True)
                 sec_l, sec_r = st.columns([3, 2], gap="large")
@@ -2107,7 +2427,7 @@ def main():
                 with sec_r:
                     for sec, score in section_scores.items():
                         color = "#68d391" if score >= 50 else "#f6ad55" if score >= 25 else "#fc8181"
-                        render_gradient_progress(f"📌 {sec}", score, color, "#63b3ed")
+                        render_gradient_progress(f"📌 {sec}", score, color, "#5B6CFF")
             # ─── NEW CODE END ─────────────────────────────────────
 
         # ── TAB: SKILL ANALYSIS ───────────────────────────────────
@@ -2117,7 +2437,7 @@ def main():
                 pills_html = render_skill_pills(list(resume_matched), "matched")
                 render_glass_section(
                     f"Matched Skills  ({len(resume_matched)})", "✅",
-                    pills_html or "<p style='color:#718096'>None found.</p>",
+                    pills_html or "<p style='color:#A1A8C3'>None found.</p>",
                     accent="#68d391"
                 )
             with sk_r:
@@ -2148,14 +2468,14 @@ def main():
                 st.markdown("<br>", unsafe_allow_html=True)
                 table_data = [{"Skill": sk, "Frequency": cnt}
                               for sk, cnt in list(freq_dict.items())[:20]]
-                st.dataframe(table_data, use_container_width=True, hide_index=True)
+                st.dataframe(table_data, width="stretch", hide_index=True)
             else:
                 st.warning("No matching skill keywords found in the resume.")
 
         # ── TAB: SUGGESTIONS ──────────────────────────────────────
         with tab_sug:
             st.markdown(
-                "<p style='color:#718096 !important; font-size:.88rem;"
+                "<p style='color:#A1A8C3 !important; font-size:.88rem;"
                 "margin-bottom:1rem;'>"
                 "Personalised recommendations to improve your resume's ATS score:</p>",
                 unsafe_allow_html=True,
@@ -2168,7 +2488,7 @@ def main():
         # ─── NEW CODE START ─── Feature 2: Keyword Highlight Tab ─
         with tab_kw:
             st.markdown(
-                "<p style='color:#a0aec0 !important;font-size:.88rem;"
+                "<p style='color:#A1A8C3 !important;font-size:.88rem;"
                 "margin-bottom:.8rem;'>"
                 "Job description text with skill keywords highlighted. "
                 "<span style='color:#68d391 !important;font-weight:700;'>Green</span>"
@@ -2183,11 +2503,11 @@ def main():
                 '<span style="display:flex;align-items:center;gap:.4rem;font-size:.82rem;">'
                 '<mark style="background:rgba(104,211,145,0.25);color:#68d391 !important;'
                 'border-radius:3px;padding:1px 8px;font-weight:600;">sample</mark>'
-                '<span style="color:#718096 !important;">Matched skill</span></span>'
+                '<span style="color:#A1A8C3 !important;">Matched skill</span></span>'
                 '<span style="display:flex;align-items:center;gap:.4rem;font-size:.82rem;">'
                 '<mark style="background:rgba(252,129,129,0.22);color:#fc8181 !important;'
                 'border-radius:3px;padding:1px 8px;font-weight:600;">sample</mark>'
-                '<span style="color:#718096 !important;">Missing skill</span></span>'
+                '<span style="color:#A1A8C3 !important;">Missing skill</span></span>'
                 '</div>'
             )
             st.markdown(legend_html, unsafe_allow_html=True)
@@ -2202,7 +2522,7 @@ def main():
         # ─── NEW CODE START ─── Feature 4: ATS Checker Tab ───────
         with tab_ats:
             st.markdown(
-                "<p style='color:#a0aec0 !important;font-size:.88rem;"
+                "<p style='color:#A1A8C3 !important;font-size:.88rem;"
                 "margin-bottom:1rem;'>"
                 "Rule-based ATS compatibility check for your resume:</p>",
                 unsafe_allow_html=True,
@@ -2218,7 +2538,7 @@ def main():
                 ats_pct = round(pass_count / total * 100) if total else 0
                 render_gradient_progress(
                     f"🛡️ ATS Compatibility Score  ({pass_count}/{total} checks passed)",
-                    ats_pct, "#68d391", "#63b3ed"
+                    ats_pct, "#68d391", "#5B6CFF"
                 )
             with ats_r:
                 render_metric_card("✅", "Passed", str(pass_count), "checks", "#68d391")
@@ -2239,7 +2559,7 @@ def main():
         # ─── NEW CODE START ─── Feature 5: Improve Resume Tab ────
         with tab_improve:
             st.markdown(
-                "<p style='color:#a0aec0 !important;font-size:.88rem;"
+                "<p style='color:#A1A8C3 !important;font-size:.88rem;"
                 "margin-bottom:1rem;'>"
                 "Generate a tailored professional summary and improvement tips "
                 "based on your resume and the target job description.</p>",
@@ -2256,7 +2576,7 @@ def main():
                     "Suggested Professional Summary", "✨",
                     f"<p style='line-height:1.8;font-size:.92rem;"
                     f"color:#e2e8f0 !important;margin:0;'>{improved}</p>",
-                    accent="#b794f4"
+                    accent="#8B5CF6"
                 )
                 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -2362,52 +2682,69 @@ def main():
                 st.markdown("<br>", unsafe_allow_html=True)
 
                 # ── Top-N filter ──────────────────────────────────
-                map_col, ctrl_col = st.columns([4, 1], gap="large")
-                with ctrl_col:
-                    top_n = st.slider(
-                        "Show Top Locations",
-                        min_value=1,
-                        max_value=max(len(geo_df), 1),
-                        value=min(len(geo_df), 50),
-                        step=1,
-                        key="map_top_n",
-                        help="Filter the map to show only the top N most-mentioned locations",
-                    )
-                    st.markdown(
-                        "<p style='font-size:.75rem;color:#718096 !important;"
-                        "margin-top:.3rem;'>Use the slider to focus on the "
-                        "most prominent job markets.</p>",
-                        unsafe_allow_html=True,
-                    )
+                # Guard: st.slider requires min_value < max_value strictly.
+                # When only one geocoded location exists there is nothing to
+                # filter, so we skip the slider and pin top_n = 1.
+                num_locations = len(geo_df)
 
-                with map_col:
-                    st.markdown(
-                        "<p style='font-weight:700;color:#a0aec0 !important;"
-                        "font-size:.82rem;letter-spacing:.08em;text-transform:uppercase;"
-                        "margin-bottom:.5rem;'>🗺️ Interactive Map</p>",
-                        unsafe_allow_html=True,
+                if num_locations == 0:
+                    # IMPORTANT: zero locations is not a single-location case.
+                    # Keep the message accurate and avoid rendering an empty map/table.
+                    st.warning(
+                        f"⚠️ {len(set(map_locs))} location(s) were detected, but none could be mapped. "
+                        "The external geocoder may be unavailable right now."
                     )
-                    render_job_map(geo_df, top_n=top_n)
-                    st.caption(
-                        "🔵 Blue dots = job locations  ·  "
-                        "🔥 Heatmap = location density  ·  "
-                        "Hover over a dot for details"
-                    )
+                    if remote_found:
+                        st.info("🏠 The JD also mentions remote/hybrid work.")
+                else:
+                    has_multiple = num_locations > 1
 
-                # ── Raw table expander ────────────────────────────
-                with st.expander("📋 View raw geocoded location data"):
-                    display_df = geo_df[
-                        ["location_name","lat","lon","frequency"]
-                    ].sort_values("frequency", ascending=False).reset_index(drop=True)
-                    display_df.columns = ["Location", "Latitude", "Longitude", "Mentions"]
-                    st.dataframe(display_df, use_container_width=True, hide_index=True)
+                    if has_multiple:
+                        map_col, ctrl_col = st.columns([4, 1], gap="large")
+                        with ctrl_col:
+                            top_n = st.slider(
+                                "Show Top Locations",
+                                min_value=1,
+                                max_value=num_locations,
+                                value=min(num_locations, 10),
+                                step=1,
+                                key="map_top_n",
+                                help="Filter the map to show only the most-mentioned locations",
+                            )
+                            st.caption("Focus on the most prominent job markets.")
+                    else:
+                        map_col = st.container()
+                        top_n = 1
+                        st.info("📍 One location was mapped — showing it on the map.")
+
+                    with map_col:
+                        st.markdown(
+                            "<p style='font-weight:700;color:#A1A8C3 !important;"
+                            "font-size:.82rem;letter-spacing:.08em;text-transform:uppercase;"
+                            "margin-bottom:.5rem;'>🗺️ Interactive Map</p>",
+                            unsafe_allow_html=True,
+                        )
+                        render_job_map(geo_df, top_n=top_n)
+                        st.caption(
+                            "🔵 Blue dots = job locations  ·  "
+                            "🔥 Heatmap = location density  ·  "
+                            "Hover over a dot for details"
+                        )
+
+                    # ── Raw table expander ────────────────────────────
+                    with st.expander("📋 View raw geocoded location data"):
+                        display_df = geo_df[
+                            ["location_name","lat","lon","frequency"]
+                        ].sort_values("frequency", ascending=False).reset_index(drop=True)
+                        display_df.columns = ["Location", "Latitude", "Longitude", "Mentions"]
+                        st.dataframe(display_df, width="stretch", hide_index=True)
 
         # ─── NEW CODE END ─────────────────────────────────────────
 
         # ── TAB: EXPORT REPORT ────────────────────────────────────
         with tab_exp:
             _export_desc = (
-                "<p style='color:#a0aec0 !important;font-size:.88rem;"
+                "<p style='color:#A1A8C3 !important;font-size:.88rem;"
                 "line-height:1.6;margin:0;'>"
                 "Your report includes &nbsp;&middot;&nbsp; Final Fit Score "
                 "&nbsp;&middot;&nbsp; Score Breakdown &nbsp;&middot;&nbsp; "
@@ -2421,7 +2758,7 @@ def main():
                 data=pdf_bytes,
                 file_name="ATS_Resume_Analysis_Report.pdf",
                 mime="application/pdf",
-                use_container_width=True,
+                width="stretch",          # replaces deprecated use_container_width=True
                 key="pdf_download_btn",
             )
 
