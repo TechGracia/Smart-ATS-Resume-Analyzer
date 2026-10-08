@@ -223,6 +223,7 @@ code, pre, .mono { font-family: 'JetBrains Mono', monospace !important; }
   box-shadow: 0 0 12px rgba(91,108,255,0.08) inset !important;
 }
 
+<<<<<<< HEAD
 /* ── Analyze button — centered glow, 250-320px ── */
 .stButton > button {
   background: linear-gradient(135deg, #4F46E5, #8B5CF6) !important;
@@ -238,21 +239,39 @@ code, pre, .mono { font-family: 'JetBrains Mono', monospace !important; }
   box-shadow: 0 6px 18px rgba(79,70,229,.18) !important;
   position: relative !important;
   overflow: hidden !important;
+=======
+/* ── Analyze button ── */
+ /* ✅ SAFE BUTTON (FINAL FIXED VERSION) */
+div[data-testid="stButton"] > button {
+  background: linear-gradient(135deg, #1a56db, #7c3aed);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: 0.05em;
+  padding: 0.6rem 1.5rem;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 15px rgba(124,58,237,0.35);
+>>>>>>> cd324767c631701b74b9f50173482abb9d447318
 }
-.stButton > button::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 60%);
-  opacity: 0;
-  transition: opacity .25s ease;
+
+/* Hover */
+div[data-testid="stButton"] > button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(124,58,237,0.5);
 }
+<<<<<<< HEAD
 .stButton > button:hover {
   transform: translateY(-2px) scale(1.015) !important;
   box-shadow: 0 8px 22px rgba(79,70,229,.25) !important;
+=======
+
+/* Click */
+div[data-testid="stButton"] > button:active {
+  transform: scale(0.98);
+>>>>>>> cd324767c631701b74b9f50173482abb9d447318
 }
-.stButton > button:hover::before { opacity: 1; }
-.stButton > button:active { transform: translateY(0) scale(.99) !important; }
 
 /* ── Max-width dashboard container ── */
 section[data-testid="stMain"] > div > div[data-testid="stVerticalBlock"] {
