@@ -4,7 +4,7 @@ An intelligent resume analysis web application that combines **AI-assisted caree
 
 ## 🚀 Live Demo
 
-👉 **[Open Smart ATS Resume Analyzer](https://smartaianalyzer.streamlit.app/)**
+👉 **[Open Smart ATS Resume Analyzer](https://smart-ats-gracia.streamlit.app/)**
 
 ## ✨ Key Features
 
